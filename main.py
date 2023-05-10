@@ -1,16 +1,24 @@
+# Middle East Technical University
+# Department of Electrical and Electronics Engineering
+# EE494 Engineering Design II
+# Team:     Manchester Untitled
+# Project:  Aid for Blind People
+
+# # # # # # # # # # # # # # # # # #
+# MAIN DECISION MAKING ALGORITHM  #
+# # # # # # # # # # # # # # # # # #
+
 import asyncio
 import cv2
-import numpy as np
 import re
 import statistics
-import sys
-from ultralytics import YOLO
-from ultralytics.yolo.utils.plotting import Annotator
-from selenium.webdriver.common.by import By
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.by import By
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
+from ultralytics import YOLO
+from ultralytics.yolo.utils.plotting import Annotator
 from webdriver_manager.chrome import ChromeDriverManager
 
 
@@ -46,7 +54,7 @@ async def capture_async(gvars, capture, model):
                 break
 
 
-async def data_channel_sender(obj, sender, button):
+async def data_channel_periodic(obj, sender, button):
     await asyncio.sleep(0.1)
     while True:
         await asyncio.sleep(5),
@@ -59,10 +67,19 @@ async def data_channel_sender(obj, sender, button):
             sender.send_keys(message_str)
             await asyncio.sleep(0.1)
             button.click()
+            await asyncio.sleep(0.1)
         obj.ahead_idle = []
         obj.here_idle = []
         obj.bin_idle = []
         obj.ring_idle = []
+
+
+async def data_channel_send(message, sender, button):
+    await asyncio.sleep(0.1)
+    sender.send_keys(message)
+    await asyncio.sleep(0.1)
+    button.click()
+    await asyncio.sleep(0.1)
 
 
 def data_channel_reader(driver):
@@ -87,10 +104,9 @@ def data_channel_reader(driver):
 
 async def main():
     await asyncio.sleep(0.1)
-    global_variables = GlobalVariables("IDLE")
+    global_vars = GlobalVariables("IDLE")
     current_state = "IDLE"
-    previous_state = "IDLE"
-    capture = cv2.VideoCapture(1)
+    capture = cv2.VideoCapture(0)
     object_tracking_model = YOLO('best.pt')
     driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()))
     driver.implicitly_wait(0.5)
@@ -108,28 +124,35 @@ async def main():
     option_button.click()
     text_box_sender.send_keys("CONNECTED")
     send_button.click()
-    capture_task = asyncio.create_task(capture_async(global_variables, capture, object_tracking_model))
-    sender_task = asyncio.create_task(data_channel_sender(global_variables, text_box_sender, send_button))
+    capture_task = asyncio.create_task(capture_async(global_vars, capture, object_tracking_model))
+    sender_task = asyncio.create_task(data_channel_periodic(global_vars, text_box_sender, send_button))
 
     while True:
         await asyncio.sleep(0.01)
+
+        # STATE 1 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         if current_state == "IDLE":
+            if sender_task.done():
+                sender_task = asyncio.create_task(data_channel_periodic(global_vars, text_box_sender, send_button))
+
             command = data_channel_reader(driver)
             if command == "SIGN":
-                previous_state = "IDLE"
                 current_state = "SIGN_CHECK"
+                await data_channel_send("IDLE-SIGN", text_box_sender, send_button)
+                sender_task.cancel()
                 continue
             elif command == "CROSS":
-                previous_state = "IDLE"
                 current_state = "CROSS_CHECK"
+                await data_channel_send("IDLE-CROSS", text_box_sender, send_button)
+                sender_task.cancel()
                 continue
 
             aheads = []
             heres = []
             bins = []
             rings = []
-            if len(global_variables.classes) != 0:
-                for cls in global_variables.classes:
+            if len(global_vars.classes) != 0:
+                for cls in global_vars.classes:
                     if cls == 0:
                         aheads.append(cls)
                     elif cls == 1:
@@ -138,46 +161,86 @@ async def main():
                         bins.append(cls)
                     elif cls == 3:
                         rings.append(cls)
-                global_variables.ahead_idle.append(len(aheads))
-                global_variables.here_idle.append(len(heres))
-                global_variables.bin_idle.append(len(bins))
-                global_variables.ring_idle.append(len(rings))
+                global_vars.ahead_idle.append(len(aheads))
+                global_vars.here_idle.append(len(heres))
+                global_vars.bin_idle.append(len(bins))
+                global_vars.ring_idle.append(len(rings))
 
+        # STATE 2 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "SIGN_CHECK":
             command = data_channel_reader(driver)
 
+        # STATE 3 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "SIGN_MAIN":
             command = data_channel_reader(driver)
+            if command == "CANCEL":
+                current_state = "IDLE"
+                await data_channel_send("SIGN-IDLE", text_box_sender, send_button)
+                continue
 
+        # STATE 4 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "SIGN_DEAD":
             command = data_channel_reader(driver)
+            if command == "CANCEL":
+                current_state = "IDLE"
+                await data_channel_send("SIGN-IDLE", text_box_sender, send_button)
+                continue
 
-        elif current_state == "SIGN_CHECK":
-            command = data_channel_reader(driver)
-
+        # STATE 5 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "CROSS_CHECK":
             command = data_channel_reader(driver)
 
+        # STATE 6 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "CROSS_AHEAD":
             command = data_channel_reader(driver)
+            if command == "CANCEL":
+                current_state = "IDLE"
+                await data_channel_send("CROSS-IDLE", text_box_sender, send_button)
+                continue
 
+        # STATE 7 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "CROSS_HERE":
             command = data_channel_reader(driver)
 
+        # STATE 8 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "CROSS_LEFT":
             command = data_channel_reader(driver)
+            if command == "CANCEL":
+                current_state = "IDLE"
+                await data_channel_send("CROSS-IDLE", text_box_sender, send_button)
+                continue
 
+        # STATE 9 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "CROSS_LEFT_CHECK":
             command = data_channel_reader(driver)
+            if command == "CANCEL":
+                current_state = "IDLE"
+                await data_channel_send("CROSS-IDLE", text_box_sender, send_button)
+                continue
 
+        # STATE 10 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "CROSS_RIGHT":
             command = data_channel_reader(driver)
+            if command == "CANCEL":
+                current_state = "IDLE"
+                await data_channel_send("CROSS-IDLE", text_box_sender, send_button)
+                continue
 
+        # STATE 11 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "CROSS_RIGHT_CHECK":
             command = data_channel_reader(driver)
+            if command == "CANCEL":
+                current_state = "IDLE"
+                await data_channel_send("CROSS-IDLE", text_box_sender, send_button)
+                continue
 
+        # STATE 12 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "CROSS_DEAD":
             command = data_channel_reader(driver)
+            if command == "CANCEL":
+                current_state = "IDLE"
+                await data_channel_send("CROSS-IDLE", text_box_sender, send_button)
+                continue
 
         else:
             print("ERROR")

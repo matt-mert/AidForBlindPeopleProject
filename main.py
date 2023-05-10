@@ -36,8 +36,10 @@ class GlobalVariables:
         self.bool_sign_checker = False
         self.ahead_cross_checker = []
         self.here_cross_checker = []
-        self.bool_ahead_cross = False
-        self.bool_here_cross = False
+        self.bool_ahead_cross_checker = False
+        self.bool_here_cross_checker = False
+        self.here_ahead_state = []
+        self.bool_ahead_state = False
 
 
 async def capture_async(gvars, capture, model):
@@ -45,7 +47,7 @@ async def capture_async(gvars, capture, model):
     while True:
         await asyncio.sleep(0.0001)
         success, frame = capture.read()
-        results = model(source=frame, stream=True, verbose=False)
+        results = model(source=frame, stream=True, device="cuda:0", verbose=False)
         for result in results:
             annotated = result.plot()
             boxes = result.boxes
@@ -91,14 +93,29 @@ async def cross_checker_async(obj, flag):
             here_mode = statistics.mode(obj.here_cross_checker)
 
         if ahead_mode == 0:
-            obj.bool_ahead_cross = False
+            obj.bool_ahead_cross_checker = False
         else:
-            obj.bool_ahead_cross = True
+            obj.bool_ahead_cross_checker = True
 
         if here_mode == 0:
-            obj.bool_here_cross = False
+            obj.bool_here_cross_checker = False
         else:
-            obj.bool_here_cross = True
+            obj.bool_here_cross_checker = True
+
+
+async def here_checker_async(obj):
+    await asyncio.sleep(0.1)
+    while True:
+        obj.here_ahead_state = []
+        obj.bool_ahead_state = False
+        await asyncio.sleep(1)
+        here_mode = 0
+        if len(obj.here_ahead_state) != 0:
+            here_mode = statistics.mode(obj.here_ahead_state)
+
+        if here_mode != 0:
+            obj.bool_ahead_state = True
+            break
 
 
 async def data_channel_periodic(obj, sender, button):
@@ -179,7 +196,9 @@ async def main():
     global_vars = GlobalVariables("IDLE")
     current_state = "IDLE"
     previous_state = "IDLE"
-    capture = cv2.VideoCapture(0)
+    capture = cv2.VideoCapture(2)
+    capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     object_tracking_model = YOLO('best.pt')
     driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()))
     driver.implicitly_wait(0.5)
@@ -204,6 +223,7 @@ async def main():
     cross_checker_task = asyncio.create_task(cross_checker_async(global_vars, False))
 
     while True:
+        print(current_state)
         await asyncio.sleep(0.0001)
 
         # STATE 1 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -214,14 +234,14 @@ async def main():
             if command == "SIGN":
                 current_state = "SIGN_CHECK"
                 previous_state = "IDLE"
-                asyncio.create_task(sign_checker_async(global_vars, True))
                 sender_task.cancel()
+                sign_checker_task = asyncio.create_task(sign_checker_async(global_vars, True))
                 continue
             elif command == "CROSS":
                 current_state = "CROSS_CHECK"
                 previous_state = "IDLE"
-                asyncio.create_task(cross_checker_async(global_vars, True))
                 sender_task.cancel()
+                cross_checker_task = asyncio.create_task(cross_checker_async(global_vars, True))
                 continue
             aheads = []
             heres = []
@@ -237,10 +257,10 @@ async def main():
                         bins.append(cls)
                     elif cls == 3:
                         rings.append(cls)
-                global_vars.ahead_idle.append(len(aheads))
-                global_vars.here_idle.append(len(heres))
-                global_vars.bin_idle.append(len(bins))
-                global_vars.ring_idle.append(len(rings))
+            global_vars.ahead_idle.append(len(aheads))
+            global_vars.here_idle.append(len(heres))
+            global_vars.bin_idle.append(len(bins))
+            global_vars.ring_idle.append(len(rings))
 
         # STATE 2 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "SIGN_CHECK":
@@ -249,7 +269,8 @@ async def main():
                 for cls in global_vars.classes:
                     if cls == 3:
                         rings.append(cls)
-                global_vars.ring_sign_checker.append(len(rings))
+            global_vars.ring_sign_checker.append(len(rings))
+
             if sign_checker_task.done():
                 if global_vars.bool_sign_checker is True:
                     current_state = "SIGN_MAIN"
@@ -272,7 +293,10 @@ async def main():
                 current_state = "IDLE"
                 previous_state = "SIGN_MAIN"
                 counter = 0
+                message = "3:CANCEL"
+                await data_channel_send(message, text_box_sender, send_button)
                 continue
+
             if counter % 20 == 0:
                 e = datetime.datetime.now()
                 minute = e.minute
@@ -293,52 +317,84 @@ async def main():
                         aheads.append(cls)
                     elif cls == 1:
                         heres.append(cls)
-                global_vars.ahead_cross_checker.append(len(aheads))
-                global_vars.here_cross_checker.append(len(heres))
-            if cross_checker_task.done():
-                print("safdgsfad")
+            global_vars.ahead_cross_checker.append(len(aheads))
+            global_vars.here_cross_checker.append(len(heres))
 
+            if cross_checker_task.done():
+                if global_vars.bool_here_cross_checker is True:
+                    current_state = "CROSS_LEFT"
+                    previous_state = "CROSS_CHECK"
+                    message = "4:1"
+                    await data_channel_send(message, text_box_sender, send_button)
+                    continue
+                elif global_vars.bool_ahead_cross_checker is True:
+                    current_state = "CROSS_AHEAD"
+                    previous_state = "CROSS_CHECK"
+                    message = "4:2"
+                    await data_channel_send(message, text_box_sender, send_button)
+                    asyncio.create_task(here_checker_async(global_vars))
+                    continue
+                else:
+                    current_state = "IDLE"
+                    previous_state = "CROSS_CHECK"
+                    message = "4:0"
+                    await data_channel_send(message, text_box_sender, send_button)
+                    await  data_channel_send("Received: CANCEL", text_box_sender, send_button)
+                    continue
 
         # STATE 5 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "CROSS_AHEAD":
             command = data_channel_reader(driver)
             if command == "CANCEL":
                 current_state = "IDLE"
+                previous_state = "CROSS_AHEAD"
+                message = "5:CANCEL"
+                await data_channel_send(message, text_box_sender, send_button)
+                continue
+
+            heres = []
+            if len(global_vars.classes) != 0:
+                for cls in global_vars.classes:
+                    if cls == 1:
+                        heres.append(cls)
+            global_vars.here_ahead_state.append(len(heres))
+
+            if global_vars.bool_ahead_state is True:
+                current_state = "CROSS_LEFT"
+                previous_state = "CROSS_AHEAD"
+                message = "5:1"
+                await data_channel_send(message, text_box_sender, send_button)
                 continue
 
         # STATE 6 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-        elif current_state == "CROSS_HERE":
-            command = data_channel_reader(driver)
-
-        # STATE 7 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "CROSS_LEFT":
             command = data_channel_reader(driver)
             if command == "CANCEL":
                 current_state = "IDLE"
                 continue
 
-        # STATE 8 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+        # STATE 7 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "CROSS_LEFT_CHECK":
             command = data_channel_reader(driver)
             if command == "CANCEL":
                 current_state = "IDLE"
                 continue
 
-        # STATE 9 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+        # STATE 8 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "CROSS_RIGHT":
             command = data_channel_reader(driver)
             if command == "CANCEL":
                 current_state = "IDLE"
                 continue
 
-        # STATE 10 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+        # STATE 9 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "CROSS_RIGHT_CHECK":
             command = data_channel_reader(driver)
             if command == "CANCEL":
                 current_state = "IDLE"
                 continue
 
-        # STATE 11 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+        # STATE 10 # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         elif current_state == "CROSS_DEAD":
             command = data_channel_reader(driver)
             if command == "CANCEL":

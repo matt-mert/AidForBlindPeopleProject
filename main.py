@@ -220,21 +220,6 @@ def data_channel_reader(driver):
         return command[1]
 
 
-def meter_calculator(height):
-    x = 0.5/((5/9)*height)
-    x = round(float(x))
-    return x
-
-
-def direction_determinator(x):
-    if x <= 0.70:
-        return "LEFT"
-    elif x >= 0.80:
-        return "RIGHT"
-    else:
-        return "FORWARD"
-
-
 async def main():
     await asyncio.sleep(0.1)
     global_vars = GlobalVariables("IDLE")

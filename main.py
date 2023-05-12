@@ -261,8 +261,8 @@ async def main():
     text_box_sender.send_keys("CONNECTED")
     send_button.click()
     counter = 0
-    capture_task = asyncio.create_task(capture_async(global_vars, capture, object_tracking_model))
-    capture_task1 = asyncio.create_task(capture_async1(global_vars, capture, car_tracking_model))
+    asyncio.create_task(capture_async(global_vars, capture, object_tracking_model))
+    asyncio.create_task(capture_async1(global_vars, capture, car_tracking_model))
     sender_task = asyncio.create_task(data_channel_periodic(global_vars, text_box_sender, send_button))
     sign_checker_task = asyncio.create_task(sign_checker_async(global_vars, False))
     cross_checker_task = asyncio.create_task(cross_checker_async(global_vars, False))
@@ -376,7 +376,7 @@ async def main():
                     current_state = "IDLE"
                     message = "4:0"
                     await data_channel_send(message, text_box_sender, send_button)
-                    await  data_channel_send("Received: CANCEL", text_box_sender, send_button)
+                    await data_channel_send("Received: CANCEL", text_box_sender, send_button)
                     continue
 
         # STATE 5 # # # # # # # # # # # # # # # # # # # # # # # # # # # #

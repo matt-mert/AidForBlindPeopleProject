@@ -28,6 +28,8 @@ class GlobalVariables:
         self.current_state = current_state
         self.classes = []
         self.confidences = []
+        self.classes1 = []
+        self.confidences1 = []
         self.ahead_idle = []
         self.here_idle = []
         self.bin_idle = []
@@ -59,6 +61,27 @@ async def capture_async(gvars, capture, model):
             gvars.classes = classes
             gvars.confidences = confidences
             cv2.imshow("Result", annotated)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+
+async def capture_async1(gvars, capture, model):
+    await asyncio.sleep(0.1)
+    while True:
+        await asyncio.sleep(0.0001)
+        success, frame = capture.read()
+        results = model(source=frame, stream=True, device="cuda:0", verbose=False)
+        for result in results:
+            annotated = result.plot()
+            boxes = result.boxes
+            classes = []
+            confidences = []
+            for box in boxes:
+                classes.append(box.cls.cpu())
+                confidences.append(box.conf.cpu())
+            gvars.classes1 = classes
+            gvars.confidences1 = confidences
+            cv2.imshow("Result1", annotated)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
@@ -196,10 +219,11 @@ async def main():
     global_vars = GlobalVariables("IDLE")
     current_state = "IDLE"
     previous_state = "IDLE"
-    capture = cv2.VideoCapture(2)
+    capture = cv2.VideoCapture(4)
     capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     object_tracking_model = YOLO('best.pt')
+    car_tracking_model = YOLO('best1.pt')
     driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()))
     driver.implicitly_wait(0.5)
     driver.get("https://mert.damgoai.com:5443/WebRTCAppEE/player.html")
@@ -218,12 +242,12 @@ async def main():
     send_button.click()
     counter = 0
     capture_task = asyncio.create_task(capture_async(global_vars, capture, object_tracking_model))
+    # capture_task1 = asyncio.create_task(capture_async1(global_vars, capture, car_tracking_model))
     sender_task = asyncio.create_task(data_channel_periodic(global_vars, text_box_sender, send_button))
     sign_checker_task = asyncio.create_task(sign_checker_async(global_vars, False))
     cross_checker_task = asyncio.create_task(cross_checker_async(global_vars, False))
 
     while True:
-        print(current_state)
         await asyncio.sleep(0.0001)
 
         # STATE 1 # # # # # # # # # # # # # # # # # # # # # # # # # # # #

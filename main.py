@@ -74,7 +74,7 @@ async def capture_async1(gvars, capture, model):
     while True:
         await asyncio.sleep(0.0001)
         success, frame = capture.read()
-        results1 = model(source=frame, stream=True, device="cuda:0", verbose=False)
+        results1 = model(source=frame, conf=0.1, stream=True, device="cuda:0", verbose=False)
         for result in results1:
             annotated = result.plot()
             boxes = result.boxes
@@ -149,7 +149,7 @@ async def front_checker_async(obj, flag, sender, button):
     await asyncio.sleep(0.1)
     while flag:
         obj.front_buffer = []
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.2)
         front_mode = 0
         if len(obj.front_buffer) != 0:
             front_mode = statistics.mode(obj.front_buffer)
@@ -193,7 +193,6 @@ async def data_channel_periodic(obj, sender, button):
 
 
 async def data_channel_send(message, sender, button):
-    await asyncio.sleep(0.1)
     sender.send_keys(message)
     await asyncio.sleep(0.1)
     button.click()

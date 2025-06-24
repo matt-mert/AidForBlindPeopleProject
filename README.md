@@ -1,4 +1,4 @@
-# BlindAidMaster
+# Aid For Blind People Project
 
 Middle East Technical University Department of Electrical and Electronics Engineering
 

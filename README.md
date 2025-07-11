@@ -1,8 +1,8 @@
-# Aid For Blind People Project
+# Guidance System for Visually Impaired Individuals
 
 Middle East Technical University Department of Electrical and Electronics Engineering
 
-Senior Year Capstone Design Project - Aid for Blind People
+Senior Year Capstone Design Project
 
 The main logic code based on user requests and environmental detections from the trained
 machine learning model for the capstone project running on the backend server.
